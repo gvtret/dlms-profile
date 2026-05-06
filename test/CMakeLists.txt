@@ -10,6 +10,9 @@ elseif(NOT TARGET GTest::gtest_main)
 endif()
 
 add_executable(dlms_profile_tests
+  profile/test_profile_c_api.cpp
+  profile/test_profile_c_header.c
+  profile/test_profile_channels.cpp
   profile/test_profile_skeleton.cpp)
 
 target_link_libraries(dlms_profile_tests
@@ -19,4 +22,3 @@ target_link_libraries(dlms_profile_tests
 
 include(GoogleTest)
 gtest_discover_tests(dlms_profile_tests)
-

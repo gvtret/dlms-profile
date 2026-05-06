@@ -131,10 +131,14 @@ ProfileStatus WrapperUdpProfileChannel::ReceiveFrame(
     return ProfileStatus::NeedMoreData;
   }
 
-  return MapWrapperStatus(dlms::wrapper::DecodeWpdu(&readBuffer_[0],
-                                                    bytesRead,
-                                                    wrapperLimits_,
-                                                    frame));
+  const ProfileStatus decodeStatus =
+    MapWrapperStatus(dlms::wrapper::DecodeWpdu(&readBuffer_[0],
+                                               bytesRead,
+                                               wrapperLimits_,
+                                               frame));
+  return decodeStatus == ProfileStatus::NeedMoreData
+    ? ProfileStatus::InvalidLength
+    : decodeStatus;
 }
 
 ProfileStatus WrapperUdpProfileChannel::CopyFrameData(
@@ -154,4 +158,3 @@ ProfileStatus WrapperUdpProfileChannel::CopyFrameData(
 
 } // namespace profile
 } // namespace dlms
-
