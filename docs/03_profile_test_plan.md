@@ -11,6 +11,8 @@
 - Wrapper/UDP receive rejects truncated or malformed datagrams.
 - HDLC/LLC send writes an HDLC frame carrying standard LLC APDU payload.
 - HDLC/LLC receive decodes HDLC frame and LLC LPDU into APDU bytes.
+- HDLC session mode performs SNRM/UA, sends APDU in an I-frame, handles RR,
+  and reassembles segmented Information before LLC decode.
 - Caller-provided receive buffers report `OutputBufferTooSmall`.
 - C header compiles as C.
 
@@ -21,6 +23,7 @@ Root tests should prove cross-repository contracts only:
 - APDU GET request survives Wrapper/TCP profile channel.
 - APDU GET request survives Wrapper/UDP profile channel.
 - APDU AARQ or GET request survives HDLC/LLC profile channel.
+- APDU AARQ survives HDLC/LLC session mode after SNRM/UA.
 - APDU decoding is used only at the assertion boundary.
 
 ## Commands
@@ -30,4 +33,3 @@ cmake -S E:\work\dlms -B E:\work\dlms\build-codex
 cmake --build E:\work\dlms\build-codex
 ctest --test-dir E:\work\dlms\build-codex
 ```
-

@@ -4,11 +4,13 @@
 transports. It keeps APDU bytes opaque and delegates protocol framing to the
 existing lower-layer libraries.
 
-Supported v1 channels:
+Supported channels:
 
 - Wrapper over TCP byte streams.
 - Wrapper over UDP datagrams.
 - HDLC + LLC over byte streams.
+- HDLC + LLC over byte streams with optional HDLC data-link session
+  orchestration.
 
 The library does not parse ACSE or xDLMS APDUs, does not manage association
 state, and does not implement retry, timeout, security, or COSEM object logic.
@@ -69,6 +71,21 @@ options.hdlcLogicalDeviceAddress = 0x01;
 
 dlms::transport::SerialTransport serial(serialOptions);
 dlms::profile::HdlcProfileChannel channel(serial, options);
+```
+
+For the connection-oriented HDLC profile, enable session mode and establish the
+data link before sending APDUs:
+
+```cpp
+dlms::profile::ApduChannelOptions options =
+  dlms::profile::DefaultApduChannelOptions();
+options.hdlcUseSession = true;
+options.hdlcRole = dlms::profile::HdlcProfileRole::Client;
+
+dlms::profile::HdlcProfileChannel channel(stream, options);
+channel.Open();
+channel.ConnectDataLink();
+channel.SendApdu(dlms::profile::ProfileByteView{apdu, apduSize});
 ```
 
 All examples pass APDU bytes as opaque payload. Use `dlms-apdu` above this

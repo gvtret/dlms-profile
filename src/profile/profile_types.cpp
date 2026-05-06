@@ -12,6 +12,12 @@ ApduChannelOptions DefaultApduChannelOptions()
   options.hdlcLogicalDeviceAddress = 0x01u;
   options.hdlcPhysicalDeviceAddress = 0x00u;
   options.hdlcDirection = HdlcProfileDirection::ClientToServer;
+  options.hdlcRole = HdlcProfileRole::Client;
+  options.hdlcUseSession = false;
+  options.hdlcMaxInformationFieldLengthTransmit = 0u;
+  options.hdlcMaxInformationFieldLengthReceive = 0u;
+  options.hdlcWindowSizeTransmit = 0u;
+  options.hdlcWindowSizeReceive = 0u;
   options.maximumApduSize = 65535u;
   options.scratchBufferSize = 2048u;
   return options;
@@ -174,4 +180,3 @@ ProfileStatus MapHdlcStatus(dlms::hdlc::HdlcStatus status)
 
 } // namespace profile
 } // namespace dlms
-

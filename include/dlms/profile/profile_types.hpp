@@ -53,6 +53,12 @@ enum class HdlcProfileDirection
   ServerToClient
 };
 
+enum class HdlcProfileRole
+{
+  Client,
+  Server
+};
+
 struct ApduChannelOptions
 {
   std::uint16_t localWrapperPort;
@@ -62,6 +68,12 @@ struct ApduChannelOptions
   std::uint16_t hdlcLogicalDeviceAddress;
   std::uint16_t hdlcPhysicalDeviceAddress;
   HdlcProfileDirection hdlcDirection;
+  HdlcProfileRole hdlcRole;
+  bool hdlcUseSession;
+  std::size_t hdlcMaxInformationFieldLengthTransmit;
+  std::size_t hdlcMaxInformationFieldLengthReceive;
+  std::uint8_t hdlcWindowSizeTransmit;
+  std::uint8_t hdlcWindowSizeReceive;
 
   std::size_t maximumApduSize;
   std::size_t scratchBufferSize;
@@ -79,4 +91,3 @@ ProfileStatus MapHdlcStatus(dlms::hdlc::HdlcStatus status);
 
 } // namespace profile
 } // namespace dlms
-

@@ -20,6 +20,8 @@ Null data pointers are accepted only when the matching size is zero.
 - local and remote wrapper ports;
 - HDLC client, logical server, and physical server addresses;
 - HDLC client/server direction;
+- HDLC endpoint role;
+- optional HDLC session mode and negotiation limits;
 - maximum APDU receive size.
 
 The default is public client to management logical device.
@@ -45,6 +47,18 @@ ProfileStatus ReceiveApdu(ProfileMutableBuffer output);
   `DecodeWpdu`.
 - `HdlcProfileChannel` uses `IByteStream`, standard DLMS LLC headers,
   `EncodeFrame`, and `HdlcStreamDecoder`.
+
+When `ApduChannelOptions::hdlcUseSession` is enabled, `HdlcProfileChannel`
+also orchestrates the lower-layer `HdlcSession` state machine:
+
+- client endpoints call `ConnectDataLink()` to send SNRM and consume UA;
+- server endpoints call `AcceptDataLink()` to consume SNRM and send UA;
+- `SendApdu()` builds I-frames and emits segmented HDLC frames when the LLC
+  LPDU exceeds the negotiated transmit information field size;
+- `ReceiveApdu()` reassembles segmented HDLC frames, validates session state,
+  decodes LLC, returns only APDU bytes, and emits RR after APDU-bearing
+  I-frames;
+- `DisconnectDataLink()` sends DISC and consumes UA.
 
 The concrete channels do not include APDU codec headers.
 
@@ -81,6 +95,22 @@ dlms::profile::ApduChannelOptions options =
 options.hdlcDirection = dlms::profile::HdlcProfileDirection::ClientToServer;
 
 dlms::profile::HdlcProfileChannel channel(stream, options);
+channel.SendApdu(dlms::profile::ProfileByteView{apdu, apduSize});
+```
+
+HDLC/LLC with data-link session:
+
+```cpp
+dlms::profile::ApduChannelOptions options =
+  dlms::profile::DefaultApduChannelOptions();
+options.hdlcUseSession = true;
+options.hdlcRole = dlms::profile::HdlcProfileRole::Client;
+options.hdlcMaxInformationFieldLengthTransmit = 128;
+options.hdlcMaxInformationFieldLengthReceive = 128;
+
+dlms::profile::HdlcProfileChannel channel(stream, options);
+channel.Open();
+channel.ConnectDataLink();
 channel.SendApdu(dlms::profile::ProfileByteView{apdu, apduSize});
 ```
 

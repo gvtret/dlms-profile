@@ -11,6 +11,8 @@ bytes without inspecting the APDU content.
 - Wrapper/TCP APDU send and receive.
 - Wrapper/UDP APDU send and receive.
 - HDLC + LLC APDU send and receive.
+- Optional HDLC data-link session connect/disconnect, I-frame sequence
+  validation, RR generation, and segmented Information reassembly.
 - Status-code-only public runtime API.
 - C++11 API.
 - Stable C ABI over opaque channel handles.
@@ -35,6 +37,8 @@ bytes without inspecting the APDU content.
 - UDP sends one complete WPDU in one datagram.
 - HDLC based LLC transports ACSE and xDLMS APDUs transparently for the
   application layer.
+- The connection-oriented HDLC profile provides DL-CONNECT services and
+  transparent reliable/segmented DL-DATA service to the application layer.
 
 ## Success Criteria
 
@@ -42,5 +46,6 @@ bytes without inspecting the APDU content.
 - TCP receive handles split WPDU input.
 - UDP receive rejects malformed or truncated WPDU datagrams.
 - HDLC/LLC receive returns the LLC LSDU as APDU bytes.
+- HDLC session mode performs SNRM/UA before APDU transfer and reassembles
+  segmented HDLC Information before LLC decode.
 - Runtime API paths do not throw exceptions.
-

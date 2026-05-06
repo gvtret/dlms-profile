@@ -59,6 +59,27 @@ ReadSome -> HdlcStreamDecoder::Push
   error -> reset decoder and return mapped status
 ```
 
+## HDLC Session Receive State
+
+When `hdlcUseSession` is enabled, HDLC receive is data-link-session aware:
+
+```text
+Open -> stream open only
+Client ConnectDataLink -> SNRM write -> UA read -> HdlcSession connected
+Server AcceptDataLink -> SNRM read -> UA write -> HdlcSession connected
+
+ReadSome -> HdlcStreamDecoder::Push
+  complete frame -> HdlcReassembler::PushFrame
+  segmented partial -> keep reading
+  completed I-frame -> HdlcSession::ReceiveFrame
+                    -> DecodeLpdu(completed.information)
+                    -> queue APDU
+                    -> RR write
+  S/R/U-frame -> HdlcSession::ReceiveFrame and continue
+```
+
+The profile layer still does not inspect ACSE or xDLMS APDU contents.
+
 ## Error Model
 
 Profile APIs return `ProfileStatus`. Lower-layer statuses are mapped without
@@ -68,4 +89,3 @@ leaking lower-layer enum types into the profile public contract.
 
 Unit tests use fake transports. Root integration tests combine profile channels
 with APDU encoding/decoding at the test assertion boundary.
-

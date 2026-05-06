@@ -4,12 +4,16 @@
 #include "dlms/profile/wrapper_udp_profile_channel.hpp"
 
 #include "dlms/hdlc/hdlc_codec.hpp"
+#include "dlms/hdlc/hdlc_segmentation.hpp"
+#include "dlms/hdlc/hdlc_session.hpp"
 #include "dlms/llc/llc_codec.hpp"
 #include "dlms/transport/fake_transport.hpp"
+#include "dlms/transport/byte_stream.hpp"
 #include "dlms/wrapper/wrapper_codec.hpp"
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -18,6 +22,7 @@ namespace {
 
 using dlms::profile::ApduChannelOptions;
 using dlms::profile::DefaultApduChannelOptions;
+using dlms::profile::HdlcProfileRole;
 using dlms::profile::HdlcProfileChannel;
 using dlms::profile::ProfileByteView;
 using dlms::profile::ProfileMutableBuffer;
@@ -26,6 +31,7 @@ using dlms::profile::WrapperTcpProfileChannel;
 using dlms::profile::WrapperUdpProfileChannel;
 using dlms::transport::FakeByteStream;
 using dlms::transport::FakeDatagramTransport;
+using dlms::transport::IByteStream;
 using dlms::transport::TransportStatus;
 
 std::vector<std::uint8_t> Bytes(
@@ -58,6 +64,140 @@ std::vector<std::uint8_t> EncodeWpdu(const std::vector<std::uint8_t>& apdu)
                                       wpdu));
   return wpdu;
 }
+
+dlms::hdlc::HdlcSessionOptions MakeSessionOptions(
+  dlms::hdlc::HdlcSessionRole role,
+  std::size_t maxInfo)
+{
+  dlms::hdlc::HdlcSessionOptions options;
+  options.role = role;
+  EXPECT_EQ(dlms::hdlc::HdlcStatus::Ok,
+            dlms::hdlc::DlmsHdlcAddress::MakeClientAddress(
+              0x10u,
+              options.clientAddress));
+  EXPECT_EQ(dlms::hdlc::HdlcStatus::Ok,
+            dlms::hdlc::DlmsHdlcAddress::MakeServerAddress(
+              0x01u,
+              0x00u,
+              options.serverAddress));
+  options.limits = dlms::hdlc::DefaultHdlcCodecLimits();
+  options.limits.maximumReassembledInformationSize = 65538u;
+  options.negotiationLimits =
+    dlms::hdlc::DefaultHdlcSessionNegotiationLimits();
+  options.negotiationLimits.maxInformationFieldLengthTransmit = maxInfo;
+  options.negotiationLimits.maxInformationFieldLengthReceive = maxInfo;
+  return options;
+}
+
+dlms::hdlc::HdlcStreamDecoderOptions MakeStreamDecoderOptions()
+{
+  dlms::hdlc::HdlcStreamDecoderOptions options;
+  options.limits = dlms::hdlc::DefaultHdlcCodecLimits();
+  options.noisePolicy =
+    dlms::hdlc::HdlcNoisePolicy::IgnoreUntilOpeningFlag;
+  return options;
+}
+
+class HdlcAutoPeerStream : public IByteStream
+{
+public:
+  explicit HdlcAutoPeerStream(std::size_t maxInfo)
+    : open_(false)
+    , server_(MakeSessionOptions(dlms::hdlc::HdlcSessionRole::Server, maxInfo))
+    , decoder_(MakeStreamDecoderOptions())
+  {
+  }
+
+  TransportStatus Open()
+  {
+    open_ = true;
+    return TransportStatus::Ok;
+  }
+
+  TransportStatus Close()
+  {
+    open_ = false;
+    return TransportStatus::Ok;
+  }
+
+  bool IsOpen() const
+  {
+    return open_;
+  }
+
+  TransportStatus ReadSome(
+    std::uint8_t* output,
+    std::size_t outputSize,
+    std::size_t& bytesRead)
+  {
+    bytesRead = 0u;
+    if (!open_) {
+      return TransportStatus::NotOpen;
+    }
+    if (reads_.empty()) {
+      return TransportStatus::WouldBlock;
+    }
+    std::vector<std::uint8_t>& chunk = reads_.front();
+    if (outputSize < chunk.size()) {
+      return TransportStatus::OutputBufferTooSmall;
+    }
+    std::copy(chunk.begin(), chunk.end(), output);
+    bytesRead = chunk.size();
+    reads_.pop_front();
+    return TransportStatus::Ok;
+  }
+
+  TransportStatus WriteAll(const std::uint8_t* input, std::size_t inputSize)
+  {
+    if (!open_) {
+      return TransportStatus::NotOpen;
+    }
+    writes_.push_back(inputSize == 0u
+      ? std::vector<std::uint8_t>()
+      : std::vector<std::uint8_t>(input, input + inputSize));
+
+    std::vector<dlms::hdlc::HdlcFrameBuffer> frames;
+    if (decoder_.Push(input, inputSize, frames) != dlms::hdlc::HdlcStatus::Ok) {
+      return TransportStatus::Ok;
+    }
+    for (std::size_t i = 0u; i < frames.size(); ++i) {
+      const dlms::hdlc::HdlcFrameKind kind =
+        frames[i].control.FrameKind();
+      if (server_.ReceiveFrame(frames[i]) != dlms::hdlc::HdlcStatus::Ok) {
+        continue;
+      }
+      std::vector<std::uint8_t> response;
+      if (kind == dlms::hdlc::HdlcFrameKind::Unnumbered) {
+        if (server_.BuildConnectResponse(response) == dlms::hdlc::HdlcStatus::Ok) {
+          reads_.push_back(response);
+        }
+      } else if (kind == dlms::hdlc::HdlcFrameKind::Information) {
+        if (server_.BuildReceiveReadyFrame(true, response) ==
+            dlms::hdlc::HdlcStatus::Ok) {
+          reads_.push_back(response);
+        }
+      }
+    }
+    return TransportStatus::Ok;
+  }
+
+  void ScriptRead(const std::vector<std::uint8_t>& bytes)
+  {
+    reads_.push_back(bytes);
+  }
+
+  const std::vector<std::vector<std::uint8_t> >& Writes() const
+  {
+    return writes_;
+  }
+
+private:
+  bool open_;
+  dlms::hdlc::HdlcSession server_;
+  dlms::hdlc::HdlcStreamDecoder decoder_;
+  std::deque<std::vector<std::uint8_t> > reads_;
+  std::vector<std::vector<std::uint8_t> > writes_;
+};
 
 TEST(ProfileTypes, MapsLowerLayerStatuses)
 {
@@ -239,6 +379,149 @@ TEST(HdlcProfileChannelTest, ReceiveApduDecodesHdlcAndLlc)
   EXPECT_EQ(apdu, received);
 }
 
+TEST(HdlcProfileChannelTest, ConnectDataLinkPerformsSnrmUaHandshake)
+{
+  HdlcAutoPeerStream stream(128u);
+  ApduChannelOptions options = DefaultApduChannelOptions();
+  options.hdlcUseSession = true;
+  options.hdlcRole = HdlcProfileRole::Client;
+  HdlcProfileChannel channel(stream, options);
+
+  ASSERT_EQ(ProfileStatus::Ok, channel.Open());
+  EXPECT_EQ(ProfileStatus::Ok, channel.ConnectDataLink());
+  ASSERT_EQ(1u, stream.Writes().size());
+
+  dlms::hdlc::HdlcFrameBuffer frame;
+  ASSERT_EQ(dlms::hdlc::HdlcStatus::Ok,
+            dlms::hdlc::DecodeFrame(&stream.Writes()[0][0],
+                                    stream.Writes()[0].size(),
+                                    dlms::hdlc::DefaultHdlcCodecLimits(),
+                                    frame));
+  EXPECT_EQ(dlms::hdlc::HdlcFrameKind::Unnumbered,
+            frame.control.FrameKind());
+}
+
+TEST(HdlcProfileChannelTest, SessionModeSendsIFrameAndConsumesRr)
+{
+  HdlcAutoPeerStream stream(128u);
+  ApduChannelOptions options = DefaultApduChannelOptions();
+  options.hdlcUseSession = true;
+  options.hdlcRole = HdlcProfileRole::Client;
+  HdlcProfileChannel channel(stream, options);
+  const std::uint8_t rawApdu[] = {0xc0, 0x01, 0x81, 0x00};
+  const std::vector<std::uint8_t> apdu = Bytes(rawApdu, sizeof(rawApdu));
+
+  ASSERT_EQ(ProfileStatus::Ok, channel.Open());
+  ASSERT_EQ(ProfileStatus::Ok, channel.ConnectDataLink());
+  ASSERT_EQ(ProfileStatus::Ok, channel.SendApdu(View(apdu)));
+
+  ASSERT_EQ(2u, stream.Writes().size());
+  dlms::hdlc::HdlcFrameBuffer frame;
+  ASSERT_EQ(dlms::hdlc::HdlcStatus::Ok,
+            dlms::hdlc::DecodeFrame(&stream.Writes()[1][0],
+                                    stream.Writes()[1].size(),
+                                    dlms::hdlc::DefaultHdlcCodecLimits(),
+                                    frame));
+  EXPECT_EQ(dlms::hdlc::HdlcFrameKind::Information,
+            frame.control.FrameKind());
+}
+
+TEST(HdlcProfileChannelTest, SessionModeReassemblesSegmentedInformation)
+{
+  FakeByteStream stream;
+  ApduChannelOptions options = DefaultApduChannelOptions();
+  options.hdlcUseSession = true;
+  options.hdlcRole = HdlcProfileRole::Server;
+  options.hdlcDirection = dlms::profile::HdlcProfileDirection::ClientToServer;
+  options.hdlcMaxInformationFieldLengthTransmit = 32u;
+  options.hdlcMaxInformationFieldLengthReceive = 32u;
+  HdlcProfileChannel channel(stream, options);
+
+  dlms::hdlc::HdlcSession client(
+    MakeSessionOptions(dlms::hdlc::HdlcSessionRole::Client, 32u));
+  std::vector<std::uint8_t> bytes;
+  ASSERT_EQ(dlms::hdlc::HdlcStatus::Ok, client.BuildConnectRequest(bytes));
+
+  ASSERT_EQ(ProfileStatus::Ok, channel.Open());
+  stream.ScriptRead(bytes);
+  ASSERT_EQ(ProfileStatus::Ok, channel.AcceptDataLink());
+  ASSERT_EQ(1u, stream.Writes().size());
+
+  dlms::hdlc::HdlcFrameBuffer ua;
+  ASSERT_EQ(dlms::hdlc::HdlcStatus::Ok,
+            dlms::hdlc::DecodeFrame(&stream.Writes()[0][0],
+                                    stream.Writes()[0].size(),
+                                    dlms::hdlc::DefaultHdlcCodecLimits(),
+                                    ua));
+  ASSERT_EQ(dlms::hdlc::HdlcStatus::Ok, client.ReceiveFrame(ua));
+
+  const std::uint8_t rawApdu[] = {
+    0xc0, 0x01, 0x81, 0x00, 0x02, 0x03, 0x04, 0x05, 0x06,
+    0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+    0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
+    0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
+    0x1f, 0x20, 0x21, 0x22, 0x23
+  };
+  const std::vector<std::uint8_t> apdu = Bytes(rawApdu, sizeof(rawApdu));
+  std::vector<std::uint8_t> lpdu;
+  ASSERT_EQ(dlms::llc::LlcStatus::Ok,
+            dlms::llc::EncodeLpdu(
+              dlms::llc::MakeLlcHeader(dlms::llc::LlcDirection::ClientToServer),
+              &apdu[0],
+              apdu.size(),
+              lpdu));
+
+  std::vector<std::uint8_t> baseBytes;
+  ASSERT_EQ(dlms::hdlc::HdlcStatus::Ok,
+            client.BuildInformationFrame(0, 0u, true, baseBytes));
+  dlms::hdlc::HdlcFrameBuffer baseBuffer;
+  ASSERT_EQ(dlms::hdlc::HdlcStatus::Ok,
+            dlms::hdlc::DecodeFrame(&baseBytes[0],
+                                    baseBytes.size(),
+                                    dlms::hdlc::DefaultHdlcCodecLimits(),
+                                    baseBuffer));
+  dlms::hdlc::HdlcFrame baseFrame;
+  baseFrame.segmented = false;
+  baseFrame.destination = baseBuffer.destination;
+  baseFrame.source = baseBuffer.source;
+  baseFrame.control = baseBuffer.control;
+  baseFrame.informationData = 0;
+  baseFrame.informationSize = 0u;
+
+  dlms::hdlc::HdlcSegmentationOptions segmentationOptions;
+  segmentationOptions.limits = dlms::hdlc::DefaultHdlcCodecLimits();
+  segmentationOptions.limits.maximumInformationFieldSize = 32u;
+  dlms::hdlc::HdlcSegmenter segmenter(segmentationOptions);
+  std::vector<dlms::hdlc::HdlcFrameBuffer> frames;
+  ASSERT_EQ(dlms::hdlc::HdlcStatus::Ok,
+            segmenter.SegmentInformation(baseFrame,
+                                         &lpdu[0],
+                                         lpdu.size(),
+                                         frames));
+  ASSERT_GT(frames.size(), 1u);
+
+  for (std::size_t i = 0u; i < frames.size(); ++i) {
+    dlms::hdlc::HdlcFrame frame;
+    frame.segmented = frames[i].segmented;
+    frame.destination = frames[i].destination;
+    frame.source = frames[i].source;
+    frame.control = frames[i].control;
+    frame.informationData = &frames[i].information[0];
+    frame.informationSize = frames[i].information.size();
+    std::vector<std::uint8_t> encoded;
+    ASSERT_EQ(dlms::hdlc::HdlcStatus::Ok,
+              dlms::hdlc::EncodeFrame(frame,
+                                      dlms::hdlc::DefaultHdlcCodecLimits(),
+                                      encoded));
+    stream.ScriptRead(encoded);
+  }
+
+  std::vector<std::uint8_t> received;
+  ASSERT_EQ(ProfileStatus::Ok, channel.ReceiveApdu(received));
+  EXPECT_EQ(apdu, received);
+  ASSERT_EQ(2u, stream.Writes().size());
+}
+
 TEST(ProfileChannels, InvalidArgumentsAreRejected)
 {
   FakeByteStream stream;
@@ -257,4 +540,3 @@ TEST(ProfileChannels, InvalidArgumentsAreRejected)
 }
 
 } // namespace
-
