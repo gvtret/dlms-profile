@@ -6,7 +6,7 @@ object; callers must keep the transport alive until the handle is destroyed.
 ## Core Calls
 
 ```c
-#define DLMS_PROFILE_C_API_VERSION 1u
+#define DLMS_PROFILE_C_API_VERSION 2u
 #define DLMS_PROFILE_CHANNEL_OPTIONS_SIZE \
   (sizeof(dlms_profile_channel_options_t))
 

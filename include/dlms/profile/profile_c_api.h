@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-#define DLMS_PROFILE_C_API_VERSION 1u
+#define DLMS_PROFILE_C_API_VERSION 2u
 
 typedef enum dlms_profile_status_t
 {
