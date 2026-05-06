@@ -22,6 +22,18 @@ dlms_profile_channel_t* dlms_profile_create_hdlc_channel(
   void* byte_stream,
   const dlms_profile_channel_options_t* options);
 
+dlms_profile_channel_t* dlms_profile_create_wrapper_tcp_channel_from_callbacks(
+  const dlms_profile_byte_stream_callbacks_t* callbacks,
+  const dlms_profile_channel_options_t* options);
+
+dlms_profile_channel_t* dlms_profile_create_wrapper_udp_channel_from_callbacks(
+  const dlms_profile_datagram_callbacks_t* callbacks,
+  const dlms_profile_channel_options_t* options);
+
+dlms_profile_channel_t* dlms_profile_create_hdlc_channel_from_callbacks(
+  const dlms_profile_byte_stream_callbacks_t* callbacks,
+  const dlms_profile_channel_options_t* options);
+
 void dlms_profile_destroy_channel(dlms_profile_channel_t* channel);
 dlms_profile_status_t dlms_profile_open(dlms_profile_channel_t* channel);
 dlms_profile_status_t dlms_profile_close(dlms_profile_channel_t* channel);
@@ -40,6 +52,8 @@ dlms_profile_status_t dlms_profile_receive_apdu(...);
 - Status values mirror the C++ `ProfileStatus` contract.
 - `DLMS_PROFILE_C_API_VERSION` and `DLMS_PROFILE_CHANNEL_OPTIONS_SIZE` let
   callers assert the header contract they were compiled against.
+- Existing `void*` constructors adapt already-created C++ lower-layer
+  interfaces. Pure C callers can use the callback constructors instead.
 - Receive uses caller-provided storage and reports `OutputBufferTooSmall`.
 - Null pointers are rejected except for destroy.
 - HDLC session lifecycle calls return `UnsupportedFeature` for non-HDLC
@@ -69,4 +83,23 @@ dlms_profile_receive_apdu(channel, output, sizeof(output), &written);
 
 dlms_profile_close(channel);
 dlms_profile_destroy_channel(channel);
+```
+
+## Callback Transports
+
+Callback constructors let C callers provide byte-stream or datagram operations
+without depending on C++ transport interface objects. The profile channel owns
+the adapter, but not the callback `user_data`.
+
+```c
+dlms_profile_byte_stream_callbacks_t callbacks;
+callbacks.user_data = stream_state;
+callbacks.open = stream_open;
+callbacks.close = stream_close;
+callbacks.is_open = stream_is_open;
+callbacks.read_some = stream_read_some;
+callbacks.write_all = stream_write_all;
+
+dlms_profile_channel_t* channel =
+  dlms_profile_create_wrapper_tcp_channel_from_callbacks(&callbacks, &options);
 ```

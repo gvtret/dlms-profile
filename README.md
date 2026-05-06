@@ -98,3 +98,7 @@ limit is reached.
 
 All examples pass APDU bytes as opaque payload. Use `dlms-apdu` above this
 layer when ACSE or xDLMS parsing is required.
+
+The C API supports both existing C++ lower-layer interface pointers and pure C
+callback transports. Use the callback constructors when the lower byte stream
+or datagram endpoint is owned by C code.

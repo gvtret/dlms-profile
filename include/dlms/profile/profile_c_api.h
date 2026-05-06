@@ -69,6 +69,58 @@ typedef struct dlms_profile_channel_options_t
 
 typedef struct dlms_profile_channel_t dlms_profile_channel_t;
 
+typedef dlms_profile_status_t (*dlms_profile_byte_stream_open_fn)(
+  void* user_data);
+typedef dlms_profile_status_t (*dlms_profile_byte_stream_close_fn)(
+  void* user_data);
+typedef int (*dlms_profile_byte_stream_is_open_fn)(
+  const void* user_data);
+typedef dlms_profile_status_t (*dlms_profile_byte_stream_read_some_fn)(
+  void* user_data,
+  uint8_t* output,
+  size_t output_size,
+  size_t* bytes_read);
+typedef dlms_profile_status_t (*dlms_profile_byte_stream_write_all_fn)(
+  void* user_data,
+  const uint8_t* input,
+  size_t input_size);
+
+typedef struct dlms_profile_byte_stream_callbacks_t
+{
+  void* user_data;
+  dlms_profile_byte_stream_open_fn open;
+  dlms_profile_byte_stream_close_fn close;
+  dlms_profile_byte_stream_is_open_fn is_open;
+  dlms_profile_byte_stream_read_some_fn read_some;
+  dlms_profile_byte_stream_write_all_fn write_all;
+} dlms_profile_byte_stream_callbacks_t;
+
+typedef dlms_profile_status_t (*dlms_profile_datagram_open_fn)(
+  void* user_data);
+typedef dlms_profile_status_t (*dlms_profile_datagram_close_fn)(
+  void* user_data);
+typedef int (*dlms_profile_datagram_is_open_fn)(
+  const void* user_data);
+typedef dlms_profile_status_t (*dlms_profile_datagram_send_fn)(
+  void* user_data,
+  const uint8_t* input,
+  size_t input_size);
+typedef dlms_profile_status_t (*dlms_profile_datagram_receive_fn)(
+  void* user_data,
+  uint8_t* output,
+  size_t output_size,
+  size_t* bytes_read);
+
+typedef struct dlms_profile_datagram_callbacks_t
+{
+  void* user_data;
+  dlms_profile_datagram_open_fn open;
+  dlms_profile_datagram_close_fn close;
+  dlms_profile_datagram_is_open_fn is_open;
+  dlms_profile_datagram_send_fn send;
+  dlms_profile_datagram_receive_fn receive;
+} dlms_profile_datagram_callbacks_t;
+
 void dlms_profile_default_channel_options(
   dlms_profile_channel_options_t* options);
 
@@ -82,6 +134,18 @@ dlms_profile_channel_t* dlms_profile_create_wrapper_udp_channel(
 
 dlms_profile_channel_t* dlms_profile_create_hdlc_channel(
   void* byte_stream,
+  const dlms_profile_channel_options_t* options);
+
+dlms_profile_channel_t* dlms_profile_create_wrapper_tcp_channel_from_callbacks(
+  const dlms_profile_byte_stream_callbacks_t* callbacks,
+  const dlms_profile_channel_options_t* options);
+
+dlms_profile_channel_t* dlms_profile_create_wrapper_udp_channel_from_callbacks(
+  const dlms_profile_datagram_callbacks_t* callbacks,
+  const dlms_profile_channel_options_t* options);
+
+dlms_profile_channel_t* dlms_profile_create_hdlc_channel_from_callbacks(
+  const dlms_profile_byte_stream_callbacks_t* callbacks,
   const dlms_profile_channel_options_t* options);
 
 void dlms_profile_destroy_channel(dlms_profile_channel_t* channel);

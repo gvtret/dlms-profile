@@ -4,8 +4,72 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include <gtest/gtest.h>
+
+namespace {
+
+struct CallbackByteStream
+{
+  bool open;
+  std::vector<std::vector<std::uint8_t> > writes;
+};
+
+dlms_profile_status_t CallbackByteStreamOpen(void* userData)
+{
+  static_cast<CallbackByteStream*>(userData)->open = true;
+  return DLMS_PROFILE_STATUS_OK;
+}
+
+dlms_profile_status_t CallbackByteStreamClose(void* userData)
+{
+  static_cast<CallbackByteStream*>(userData)->open = false;
+  return DLMS_PROFILE_STATUS_OK;
+}
+
+int CallbackByteStreamIsOpen(const void* userData)
+{
+  return static_cast<const CallbackByteStream*>(userData)->open ? 1 : 0;
+}
+
+dlms_profile_status_t CallbackByteStreamReadSome(
+  void*,
+  std::uint8_t*,
+  std::size_t,
+  std::size_t* bytesRead)
+{
+  if (bytesRead != nullptr) {
+    *bytesRead = 0u;
+  }
+  return DLMS_PROFILE_STATUS_WOULD_BLOCK;
+}
+
+dlms_profile_status_t CallbackByteStreamWriteAll(
+  void* userData,
+  const std::uint8_t* input,
+  std::size_t inputSize)
+{
+  CallbackByteStream* stream = static_cast<CallbackByteStream*>(userData);
+  stream->writes.push_back(std::vector<std::uint8_t>(input,
+                                                     input + inputSize));
+  return DLMS_PROFILE_STATUS_OK;
+}
+
+dlms_profile_byte_stream_callbacks_t MakeByteStreamCallbacks(
+  CallbackByteStream* stream)
+{
+  dlms_profile_byte_stream_callbacks_t callbacks;
+  callbacks.user_data = stream;
+  callbacks.open = &CallbackByteStreamOpen;
+  callbacks.close = &CallbackByteStreamClose;
+  callbacks.is_open = &CallbackByteStreamIsOpen;
+  callbacks.read_some = &CallbackByteStreamReadSome;
+  callbacks.write_all = &CallbackByteStreamWriteAll;
+  return callbacks;
+}
+
+} // namespace
 
 TEST(ProfileCApi, WrapperTcpSendApdu)
 {
@@ -25,6 +89,53 @@ TEST(ProfileCApi, WrapperTcpSendApdu)
   EXPECT_EQ(1u, stream.Writes().size());
 
   dlms_profile_destroy_channel(channel);
+}
+
+TEST(ProfileCApi, WrapperTcpCallbackChannelSendApdu)
+{
+  CallbackByteStream stream;
+  stream.open = false;
+
+  dlms_profile_channel_options_t options;
+  dlms_profile_default_channel_options(&options);
+  dlms_profile_byte_stream_callbacks_t callbacks =
+    MakeByteStreamCallbacks(&stream);
+
+  dlms_profile_channel_t* channel =
+    dlms_profile_create_wrapper_tcp_channel_from_callbacks(&callbacks,
+                                                           &options);
+  ASSERT_NE(nullptr, channel);
+
+  const std::uint8_t apdu[] = {0xc0, 0x01};
+  EXPECT_EQ(DLMS_PROFILE_STATUS_OK, dlms_profile_open(channel));
+  EXPECT_EQ(DLMS_PROFILE_STATUS_OK,
+            dlms_profile_send_apdu(channel, apdu, sizeof(apdu)));
+  EXPECT_EQ(1, dlms_profile_is_open(channel));
+  EXPECT_EQ(1u, stream.writes.size());
+
+  dlms_profile_destroy_channel(channel);
+}
+
+TEST(ProfileCApi, CallbackChannelsValidateRequiredCallbacks)
+{
+  dlms_profile_byte_stream_callbacks_t callbacks;
+  callbacks.user_data = nullptr;
+  callbacks.open = nullptr;
+  callbacks.close = nullptr;
+  callbacks.is_open = nullptr;
+  callbacks.read_some = nullptr;
+  callbacks.write_all = nullptr;
+
+  EXPECT_EQ(nullptr,
+            dlms_profile_create_wrapper_tcp_channel_from_callbacks(
+              &callbacks,
+              nullptr));
+  EXPECT_EQ(nullptr,
+            dlms_profile_create_hdlc_channel_from_callbacks(&callbacks,
+                                                            nullptr));
+  EXPECT_EQ(nullptr,
+            dlms_profile_create_wrapper_udp_channel_from_callbacks(nullptr,
+                                                                   nullptr));
 }
 
 TEST(ProfileCApi, RejectsNullChannel)
