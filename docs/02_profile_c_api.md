@@ -33,3 +33,22 @@ dlms_profile_status_t dlms_profile_receive_apdu(...);
 - The C ABI does not expose C++ exceptions, STL types, or ownership of lower
   transports.
 
+## Example
+
+```c
+dlms_profile_channel_options_t options;
+dlms_profile_default_channel_options(&options);
+
+dlms_profile_channel_t* channel =
+  dlms_profile_create_wrapper_tcp_channel(byte_stream, &options);
+
+dlms_profile_open(channel);
+dlms_profile_send_apdu(channel, apdu, apdu_size);
+
+uint8_t output[1024];
+size_t written = 0;
+dlms_profile_receive_apdu(channel, output, sizeof(output), &written);
+
+dlms_profile_close(channel);
+dlms_profile_destroy_channel(channel);
+```

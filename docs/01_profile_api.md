@@ -48,3 +48,51 @@ ProfileStatus ReceiveApdu(ProfileMutableBuffer output);
 
 The concrete channels do not include APDU codec headers.
 
+## Examples
+
+Wrapper/TCP:
+
+```cpp
+dlms::profile::ApduChannelOptions options =
+  dlms::profile::DefaultApduChannelOptions();
+dlms::profile::WrapperTcpProfileChannel channel(stream, options);
+
+channel.Open();
+channel.SendApdu(dlms::profile::ProfileByteView{apdu, apduSize});
+
+std::vector<std::uint8_t> received;
+channel.ReceiveApdu(received);
+```
+
+Wrapper/UDP:
+
+```cpp
+dlms::profile::WrapperUdpProfileChannel channel(
+  datagram,
+  dlms::profile::DefaultApduChannelOptions());
+channel.SendApdu(dlms::profile::ProfileByteView{apdu, apduSize});
+```
+
+HDLC/LLC:
+
+```cpp
+dlms::profile::ApduChannelOptions options =
+  dlms::profile::DefaultApduChannelOptions();
+options.hdlcDirection = dlms::profile::HdlcProfileDirection::ClientToServer;
+
+dlms::profile::HdlcProfileChannel channel(stream, options);
+channel.SendApdu(dlms::profile::ProfileByteView{apdu, apduSize});
+```
+
+Caller-provided receive buffer:
+
+```cpp
+std::uint8_t output[1024];
+std::size_t written = 0;
+dlms::profile::ProfileMutableBuffer buffer;
+buffer.data = output;
+buffer.size = sizeof(output);
+buffer.writtenSize = &written;
+
+const dlms::profile::ProfileStatus status = channel.ReceiveApdu(buffer);
+```
