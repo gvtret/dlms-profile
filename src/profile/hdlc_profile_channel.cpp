@@ -9,6 +9,7 @@
 #include "dlms/llc/llc_header.hpp"
 
 #include <algorithm>
+#include <vector>
 
 namespace dlms {
 namespace profile {
@@ -54,12 +55,42 @@ dlms::hdlc::HdlcSessionOptions MakeDefaultSessionOptions()
   return options;
 }
 
+bool IsRetriableReceiveStatus(ProfileStatus status)
+{
+  return status == ProfileStatus::WouldBlock ||
+    status == ProfileStatus::Timeout ||
+    status == ProfileStatus::NeedMoreData;
+}
+
 } // namespace
 
 HdlcProfileChannel::HdlcProfileChannel(
   dlms::transport::IByteStream& stream,
   const ApduChannelOptions& options)
   : stream_(stream)
+  , timer_(&defaultTimer_)
+  , options_(options)
+  , hdlcLimits_(dlms::hdlc::DefaultHdlcCodecLimits())
+  , decoder_(MakeDecoder(hdlcLimits_))
+  , reassembler_(hdlcLimits_)
+  , session_(MakeDefaultSessionOptions())
+  , readBuffer_(options.scratchBufferSize == 0u ? 2048u : options.scratchBufferSize)
+{
+  dlms::hdlc::HdlcSessionOptions sessionOptions;
+  if (MakeHdlcSessionOptions(sessionOptions) == ProfileStatus::Ok) {
+    session_ = dlms::hdlc::HdlcSession(sessionOptions);
+    hdlcLimits_ = sessionOptions.limits;
+    decoder_ = MakeDecoder(hdlcLimits_);
+    reassembler_ = dlms::hdlc::HdlcReassembler(hdlcLimits_);
+  }
+}
+
+HdlcProfileChannel::HdlcProfileChannel(
+  dlms::transport::IByteStream& stream,
+  dlms::transport::ITimerScheduler& timer,
+  const ApduChannelOptions& options)
+  : stream_(stream)
+  , timer_(&timer)
   , options_(options)
   , hdlcLimits_(dlms::hdlc::DefaultHdlcCodecLimits())
   , decoder_(MakeDecoder(hdlcLimits_))
@@ -122,7 +153,7 @@ ProfileStatus HdlcProfileChannel::ConnectDataLink()
     return status;
   }
 
-  return ReceiveSessionControlFrame();
+  return ReceiveSessionControlFrameWithRetry(frameBytes);
 }
 
 ProfileStatus HdlcProfileChannel::AcceptDataLink()
@@ -175,7 +206,7 @@ ProfileStatus HdlcProfileChannel::DisconnectDataLink()
     return status;
   }
 
-  return ReceiveSessionControlFrame();
+  return ReceiveSessionControlFrameWithRetry(frameBytes);
 }
 
 ProfileStatus HdlcProfileChannel::SendApdu(ProfileByteView apdu)
@@ -317,6 +348,83 @@ ProfileStatus HdlcProfileChannel::WriteFrameBytes(
   return MapTransportStatus(stream_.WriteAll(data, frameBytes.size()));
 }
 
+ProfileStatus HdlcProfileChannel::BuildSessionInformationFrame(
+  const std::uint8_t* information,
+  std::size_t informationSize,
+  bool segmented,
+  bool pollFinal,
+  std::vector<std::uint8_t>& frameBytes)
+{
+  frameBytes.clear();
+
+  ProfileStatus status =
+    MapHdlcStatus(session_.BuildInformationFrame(information,
+                                                informationSize,
+                                                pollFinal,
+                                                frameBytes));
+  if (status != ProfileStatus::Ok) {
+    return status;
+  }
+  if (!segmented) {
+    return ProfileStatus::Ok;
+  }
+
+  dlms::hdlc::HdlcFrameBuffer decoded;
+  status = MapHdlcStatus(dlms::hdlc::DecodeFrame(
+    frameBytes.empty() ? 0 : &frameBytes[0],
+    frameBytes.size(),
+    hdlcLimits_,
+    decoded));
+  if (status != ProfileStatus::Ok) {
+    return status;
+  }
+
+  dlms::hdlc::HdlcFrame frame;
+  frame.segmented = true;
+  frame.destination = decoded.destination;
+  frame.source = decoded.source;
+  frame.control = decoded.control;
+  frame.informationData =
+    decoded.information.empty() ? 0 : &decoded.information[0];
+  frame.informationSize = decoded.information.size();
+  return MapHdlcStatus(dlms::hdlc::EncodeFrame(frame, hdlcLimits_, frameBytes));
+}
+
+ProfileStatus HdlcProfileChannel::SleepBeforeRetry()
+{
+  if (timer_ == 0 || options_.hdlcRetryDelayMilliseconds == 0u) {
+    return ProfileStatus::Ok;
+  }
+
+  dlms::transport::TransportDuration duration;
+  duration.milliseconds = options_.hdlcRetryDelayMilliseconds;
+  return MapTransportStatus(timer_->SleepFor(duration));
+}
+
+ProfileStatus HdlcProfileChannel::ReceiveSessionControlFrameWithRetry(
+  const std::vector<std::uint8_t>& retryFrameBytes)
+{
+  for (std::uint8_t attempt = 0u;; ++attempt) {
+    const ProfileStatus status = ReceiveSessionControlFrame();
+    if (status == ProfileStatus::Ok) {
+      return status;
+    }
+    if (!IsRetriableReceiveStatus(status) ||
+        attempt >= options_.hdlcRetryCount) {
+      return status;
+    }
+
+    ProfileStatus retryStatus = SleepBeforeRetry();
+    if (retryStatus != ProfileStatus::Ok) {
+      return retryStatus;
+    }
+    retryStatus = WriteFrameBytes(retryFrameBytes);
+    if (retryStatus != ProfileStatus::Ok) {
+      return retryStatus;
+    }
+  }
+}
+
 ProfileStatus HdlcProfileChannel::BuildFrame(
   const std::vector<std::uint8_t>& lpdu,
   std::vector<std::uint8_t>& frameBytes) const
@@ -371,82 +479,48 @@ ProfileStatus HdlcProfileChannel::SendSessionInformation(
   hdlcLimits_.maximumInformationFieldSize =
     limits.maxInformationFieldLengthTransmit;
 
-  if (lpdu.size() <= limits.maxInformationFieldLengthTransmit) {
+  const std::size_t chunkSize = limits.maxInformationFieldLengthTransmit == 0u
+    ? lpdu.size()
+    : limits.maxInformationFieldLengthTransmit;
+  const std::size_t frameCount = lpdu.empty()
+    ? 1u
+    : (lpdu.size() + chunkSize - 1u) / chunkSize;
+  std::size_t offset = 0u;
+
+  for (std::size_t i = 0u; i < frameCount; ++i) {
+    if (!session_.CanSendInformationFrame()) {
+      ProfileStatus status = ReceiveSessionControlFrame();
+      if (status != ProfileStatus::Ok) {
+        return status;
+      }
+    }
+
+    const std::size_t remaining = lpdu.size() - offset;
+    const std::size_t currentSize = lpdu.empty()
+      ? 0u
+      : std::min(chunkSize, remaining);
+    const bool finalFrame = i + 1u == frameCount;
+    const std::uint8_t* data = currentSize == 0u ? 0 : &lpdu[offset];
+
     std::vector<std::uint8_t> frameBytes;
-    const ProfileStatus status =
-      MapHdlcStatus(session_.BuildInformationFrame(
-        lpdu.empty() ? 0 : &lpdu[0],
-        lpdu.size(),
-        true,
-        frameBytes));
+    ProfileStatus status = BuildSessionInformationFrame(data,
+                                                        currentSize,
+                                                        !finalFrame,
+                                                        finalFrame,
+                                                        frameBytes);
     if (status != ProfileStatus::Ok) {
       return status;
     }
-    return WriteFrameBytes(frameBytes);
-  }
 
-  std::vector<std::uint8_t> baseBytes;
-  ProfileStatus status =
-    MapHdlcStatus(session_.BuildInformationFrame(0, 0u, true, baseBytes));
-  if (status != ProfileStatus::Ok) {
-    return status;
-  }
-
-  dlms::hdlc::HdlcFrameBuffer baseBuffer;
-  status = MapHdlcStatus(dlms::hdlc::DecodeFrame(
-    baseBytes.empty() ? 0 : &baseBytes[0],
-    baseBytes.size(),
-    hdlcLimits_,
-    baseBuffer));
-  if (status != ProfileStatus::Ok) {
-    return status;
-  }
-
-  dlms::hdlc::HdlcFrame baseFrame;
-  baseFrame.segmented = false;
-  baseFrame.destination = baseBuffer.destination;
-  baseFrame.source = baseBuffer.source;
-  baseFrame.control = baseBuffer.control;
-  baseFrame.informationData = 0;
-  baseFrame.informationSize = 0u;
-
-  dlms::hdlc::HdlcSegmentationOptions segmentationOptions;
-  segmentationOptions.limits = hdlcLimits_;
-  segmentationOptions.limits.maximumInformationFieldSize =
-    limits.maxInformationFieldLengthTransmit;
-  dlms::hdlc::HdlcSegmenter segmenter(segmentationOptions);
-  std::vector<dlms::hdlc::HdlcFrameBuffer> frames;
-  status = MapHdlcStatus(segmenter.SegmentInformation(
-    baseFrame,
-    lpdu.empty() ? 0 : &lpdu[0],
-    lpdu.size(),
-    frames));
-  if (status != ProfileStatus::Ok) {
-    return status;
-  }
-
-  for (std::size_t i = 0u; i < frames.size(); ++i) {
-    dlms::hdlc::HdlcFrame frame;
-    frame.segmented = frames[i].segmented;
-    frame.destination = frames[i].destination;
-    frame.source = frames[i].source;
-    frame.control = frames[i].control;
-    frame.informationData =
-      frames[i].information.empty() ? 0 : &frames[i].information[0];
-    frame.informationSize = frames[i].information.size();
-
-    std::vector<std::uint8_t> frameBytes;
-    status = MapHdlcStatus(dlms::hdlc::EncodeFrame(
-      frame,
-      hdlcLimits_,
-      frameBytes));
-    if (status != ProfileStatus::Ok) {
-      return status;
-    }
     status = WriteFrameBytes(frameBytes);
     if (status != ProfileStatus::Ok) {
       return status;
     }
+    status = ReceiveSessionControlFrameWithRetry(frameBytes);
+    if (status != ProfileStatus::Ok) {
+      return status;
+    }
+    offset += currentSize;
   }
 
   return ProfileStatus::Ok;

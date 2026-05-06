@@ -18,6 +18,8 @@ ApduChannelOptions DefaultApduChannelOptions()
   options.hdlcMaxInformationFieldLengthReceive = 0u;
   options.hdlcWindowSizeTransmit = 0u;
   options.hdlcWindowSizeReceive = 0u;
+  options.hdlcRetryCount = 3u;
+  options.hdlcRetryDelayMilliseconds = 10u;
   options.maximumApduSize = 65535u;
   options.scratchBufferSize = 2048u;
   return options;

@@ -13,6 +13,9 @@
 - HDLC/LLC receive decodes HDLC frame and LLC LPDU into APDU bytes.
 - HDLC session mode performs SNRM/UA, sends APDU in an I-frame, handles RR,
   and reassembles segmented Information before LLC decode.
+- HDLC session mode retries SNRM and I-frame transmission after retryable
+  receive statuses.
+- C ABI exposes HDLC session options and lifecycle calls.
 - Caller-provided receive buffers report `OutputBufferTooSmall`.
 - C header compiles as C.
 
@@ -23,7 +26,8 @@ Root tests should prove cross-repository contracts only:
 - APDU GET request survives Wrapper/TCP profile channel.
 - APDU GET request survives Wrapper/UDP profile channel.
 - APDU AARQ or GET request survives HDLC/LLC profile channel.
-- APDU AARQ survives HDLC/LLC session mode after SNRM/UA.
+- APDU AARQ survives HDLC/LLC session mode after SNRM/UA and I-frame
+  acknowledgement.
 - APDU decoding is used only at the assertion boundary.
 
 ## Commands

@@ -22,6 +22,7 @@ Null data pointers are accepted only when the matching size is zero.
 - HDLC client/server direction;
 - HDLC endpoint role;
 - optional HDLC session mode and negotiation limits;
+- optional HDLC session retry count and retry delay;
 - maximum APDU receive size.
 
 The default is public client to management logical device.
@@ -54,11 +55,18 @@ also orchestrates the lower-layer `HdlcSession` state machine:
 - client endpoints call `ConnectDataLink()` to send SNRM and consume UA;
 - server endpoints call `AcceptDataLink()` to consume SNRM and send UA;
 - `SendApdu()` builds I-frames and emits segmented HDLC frames when the LLC
-  LPDU exceeds the negotiated transmit information field size;
+  LPDU exceeds the negotiated transmit information field size. Each emitted
+  frame is built through `HdlcSession`, so send sequence numbers and negotiated
+  window limits are enforced;
 - `ReceiveApdu()` reassembles segmented HDLC frames, validates session state,
   decodes LLC, returns only APDU bytes, and emits RR after APDU-bearing
   I-frames;
 - `DisconnectDataLink()` sends DISC and consumes UA.
+
+`ConnectDataLink()`, `DisconnectDataLink()`, and session `SendApdu()` retry
+the last outbound HDLC frame when waiting for the matching control frame returns
+`WouldBlock`, `Timeout`, or `NeedMoreData`. Retry count and delay come from
+`ApduChannelOptions`.
 
 The concrete channels do not include APDU codec headers.
 
@@ -107,6 +115,8 @@ options.hdlcUseSession = true;
 options.hdlcRole = dlms::profile::HdlcProfileRole::Client;
 options.hdlcMaxInformationFieldLengthTransmit = 128;
 options.hdlcMaxInformationFieldLengthReceive = 128;
+options.hdlcRetryCount = 3;
+options.hdlcRetryDelayMilliseconds = 10;
 
 dlms::profile::HdlcProfileChannel channel(stream, options);
 channel.Open();

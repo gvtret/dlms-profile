@@ -36,6 +36,12 @@ typedef enum dlms_profile_hdlc_direction_t
   DLMS_PROFILE_HDLC_SERVER_TO_CLIENT = 1
 } dlms_profile_hdlc_direction_t;
 
+typedef enum dlms_profile_hdlc_role_t
+{
+  DLMS_PROFILE_HDLC_ROLE_CLIENT = 0,
+  DLMS_PROFILE_HDLC_ROLE_SERVER = 1
+} dlms_profile_hdlc_role_t;
+
 typedef struct dlms_profile_channel_options_t
 {
   uint16_t local_wrapper_port;
@@ -46,6 +52,14 @@ typedef struct dlms_profile_channel_options_t
   dlms_profile_hdlc_direction_t hdlc_direction;
   size_t maximum_apdu_size;
   size_t scratch_buffer_size;
+  dlms_profile_hdlc_role_t hdlc_role;
+  int hdlc_use_session;
+  size_t hdlc_max_information_field_length_transmit;
+  size_t hdlc_max_information_field_length_receive;
+  uint8_t hdlc_window_size_transmit;
+  uint8_t hdlc_window_size_receive;
+  uint8_t hdlc_retry_count;
+  uint32_t hdlc_retry_delay_milliseconds;
 } dlms_profile_channel_options_t;
 
 typedef struct dlms_profile_channel_t dlms_profile_channel_t;
@@ -71,6 +85,15 @@ dlms_profile_status_t dlms_profile_open(dlms_profile_channel_t* channel);
 dlms_profile_status_t dlms_profile_close(dlms_profile_channel_t* channel);
 int dlms_profile_is_open(const dlms_profile_channel_t* channel);
 
+dlms_profile_status_t dlms_profile_connect_data_link(
+  dlms_profile_channel_t* channel);
+
+dlms_profile_status_t dlms_profile_accept_data_link(
+  dlms_profile_channel_t* channel);
+
+dlms_profile_status_t dlms_profile_disconnect_data_link(
+  dlms_profile_channel_t* channel);
+
 dlms_profile_status_t dlms_profile_send_apdu(
   dlms_profile_channel_t* channel,
   const uint8_t* apdu,
@@ -87,4 +110,3 @@ dlms_profile_status_t dlms_profile_receive_apdu(
 #endif
 
 #endif /* DLMS_PROFILE_PROFILE_C_API_H */
-

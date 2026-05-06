@@ -24,6 +24,13 @@ dlms::profile::HdlcProfileDirection ToCppDirection(
     : dlms::profile::HdlcProfileDirection::ClientToServer;
 }
 
+dlms::profile::HdlcProfileRole ToCppRole(dlms_profile_hdlc_role_t role)
+{
+  return role == DLMS_PROFILE_HDLC_ROLE_SERVER
+    ? dlms::profile::HdlcProfileRole::Server
+    : dlms::profile::HdlcProfileRole::Client;
+}
+
 dlms::profile::ApduChannelOptions ToCppOptions(
   const dlms_profile_channel_options_t* options)
 {
@@ -43,6 +50,19 @@ dlms::profile::ApduChannelOptions ToCppOptions(
   cppOptions.hdlcDirection = ToCppDirection(options->hdlc_direction);
   cppOptions.maximumApduSize = options->maximum_apdu_size;
   cppOptions.scratchBufferSize = options->scratch_buffer_size;
+  cppOptions.hdlcRole = ToCppRole(options->hdlc_role);
+  cppOptions.hdlcUseSession = options->hdlc_use_session != 0;
+  cppOptions.hdlcMaxInformationFieldLengthTransmit =
+    options->hdlc_max_information_field_length_transmit;
+  cppOptions.hdlcMaxInformationFieldLengthReceive =
+    options->hdlc_max_information_field_length_receive;
+  cppOptions.hdlcWindowSizeTransmit =
+    options->hdlc_window_size_transmit;
+  cppOptions.hdlcWindowSizeReceive =
+    options->hdlc_window_size_receive;
+  cppOptions.hdlcRetryCount = options->hdlc_retry_count;
+  cppOptions.hdlcRetryDelayMilliseconds =
+    options->hdlc_retry_delay_milliseconds;
   return cppOptions;
 }
 
@@ -84,6 +104,20 @@ void dlms_profile_default_channel_options(
     : DLMS_PROFILE_HDLC_CLIENT_TO_SERVER;
   options->maximum_apdu_size = cppOptions.maximumApduSize;
   options->scratch_buffer_size = cppOptions.scratchBufferSize;
+  options->hdlc_role = cppOptions.hdlcRole ==
+      dlms::profile::HdlcProfileRole::Server
+    ? DLMS_PROFILE_HDLC_ROLE_SERVER
+    : DLMS_PROFILE_HDLC_ROLE_CLIENT;
+  options->hdlc_use_session = cppOptions.hdlcUseSession ? 1 : 0;
+  options->hdlc_max_information_field_length_transmit =
+    cppOptions.hdlcMaxInformationFieldLengthTransmit;
+  options->hdlc_max_information_field_length_receive =
+    cppOptions.hdlcMaxInformationFieldLengthReceive;
+  options->hdlc_window_size_transmit = cppOptions.hdlcWindowSizeTransmit;
+  options->hdlc_window_size_receive = cppOptions.hdlcWindowSizeReceive;
+  options->hdlc_retry_count = cppOptions.hdlcRetryCount;
+  options->hdlc_retry_delay_milliseconds =
+    cppOptions.hdlcRetryDelayMilliseconds;
 }
 
 dlms_profile_channel_t* dlms_profile_create_wrapper_tcp_channel(
@@ -175,6 +209,51 @@ int dlms_profile_is_open(const dlms_profile_channel_t* channel)
   return channel->impl->IsOpen() ? 1 : 0;
 }
 
+dlms_profile_status_t dlms_profile_connect_data_link(
+  dlms_profile_channel_t* channel)
+{
+  if (channel == 0 || channel->impl == 0) {
+    return DLMS_PROFILE_STATUS_INVALID_ARGUMENT;
+  }
+
+  dlms::profile::HdlcProfileChannel* hdlc =
+    dynamic_cast<dlms::profile::HdlcProfileChannel*>(channel->impl);
+  if (hdlc == 0) {
+    return DLMS_PROFILE_STATUS_UNSUPPORTED_FEATURE;
+  }
+  return ToCStatus(hdlc->ConnectDataLink());
+}
+
+dlms_profile_status_t dlms_profile_accept_data_link(
+  dlms_profile_channel_t* channel)
+{
+  if (channel == 0 || channel->impl == 0) {
+    return DLMS_PROFILE_STATUS_INVALID_ARGUMENT;
+  }
+
+  dlms::profile::HdlcProfileChannel* hdlc =
+    dynamic_cast<dlms::profile::HdlcProfileChannel*>(channel->impl);
+  if (hdlc == 0) {
+    return DLMS_PROFILE_STATUS_UNSUPPORTED_FEATURE;
+  }
+  return ToCStatus(hdlc->AcceptDataLink());
+}
+
+dlms_profile_status_t dlms_profile_disconnect_data_link(
+  dlms_profile_channel_t* channel)
+{
+  if (channel == 0 || channel->impl == 0) {
+    return DLMS_PROFILE_STATUS_INVALID_ARGUMENT;
+  }
+
+  dlms::profile::HdlcProfileChannel* hdlc =
+    dynamic_cast<dlms::profile::HdlcProfileChannel*>(channel->impl);
+  if (hdlc == 0) {
+    return DLMS_PROFILE_STATUS_UNSUPPORTED_FEATURE;
+  }
+  return ToCStatus(hdlc->DisconnectDataLink());
+}
+
 dlms_profile_status_t dlms_profile_send_apdu(
   dlms_profile_channel_t* channel,
   const uint8_t* apdu,
@@ -206,4 +285,3 @@ dlms_profile_status_t dlms_profile_receive_apdu(
   buffer.writtenSize = written_size;
   return ToCStatus(channel->impl->ReceiveApdu(buffer));
 }
-

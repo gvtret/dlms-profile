@@ -74,6 +74,8 @@ struct ApduChannelOptions
   std::size_t hdlcMaxInformationFieldLengthReceive;
   std::uint8_t hdlcWindowSizeTransmit;
   std::uint8_t hdlcWindowSizeReceive;
+  std::uint8_t hdlcRetryCount;
+  std::uint32_t hdlcRetryDelayMilliseconds;
 
   std::size_t maximumApduSize;
   std::size_t scratchBufferSize;

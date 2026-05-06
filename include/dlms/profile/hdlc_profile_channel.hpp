@@ -5,6 +5,7 @@
 #include "dlms/hdlc/hdlc_stream_decoder.hpp"
 #include "dlms/profile/apdu_channel.hpp"
 #include "dlms/transport/byte_stream.hpp"
+#include "dlms/transport/timer_scheduler.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +20,10 @@ class HdlcProfileChannel : public IApduChannel
 public:
   HdlcProfileChannel(
     dlms::transport::IByteStream& stream,
+    const ApduChannelOptions& options);
+  HdlcProfileChannel(
+    dlms::transport::IByteStream& stream,
+    dlms::transport::ITimerScheduler& timer,
     const ApduChannelOptions& options);
 
   ProfileStatus Open();
@@ -38,6 +43,15 @@ private:
     dlms::hdlc::HdlcSessionOptions& sessionOptions) const;
   ProfileStatus EnsureSession();
   ProfileStatus WriteFrameBytes(const std::vector<std::uint8_t>& frameBytes);
+  ProfileStatus BuildSessionInformationFrame(
+    const std::uint8_t* information,
+    std::size_t informationSize,
+    bool segmented,
+    bool pollFinal,
+    std::vector<std::uint8_t>& frameBytes);
+  ProfileStatus SleepBeforeRetry();
+  ProfileStatus ReceiveSessionControlFrameWithRetry(
+    const std::vector<std::uint8_t>& retryFrameBytes);
   ProfileStatus BuildFrame(
     const std::vector<std::uint8_t>& lpdu,
     std::vector<std::uint8_t>& frameBytes) const;
@@ -54,6 +68,8 @@ private:
   ProfileStatus CopyFirstPendingApdu(ProfileMutableBuffer output, bool consume);
 
   dlms::transport::IByteStream& stream_;
+  dlms::transport::TimerScheduler defaultTimer_;
+  dlms::transport::ITimerScheduler* timer_;
   ApduChannelOptions options_;
   dlms::hdlc::HdlcCodecLimits hdlcLimits_;
   dlms::hdlc::HdlcStreamDecoder decoder_;

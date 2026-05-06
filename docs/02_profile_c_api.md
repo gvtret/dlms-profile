@@ -21,6 +21,12 @@ dlms_profile_channel_t* dlms_profile_create_hdlc_channel(
 void dlms_profile_destroy_channel(dlms_profile_channel_t* channel);
 dlms_profile_status_t dlms_profile_open(dlms_profile_channel_t* channel);
 dlms_profile_status_t dlms_profile_close(dlms_profile_channel_t* channel);
+dlms_profile_status_t dlms_profile_connect_data_link(
+  dlms_profile_channel_t* channel);
+dlms_profile_status_t dlms_profile_accept_data_link(
+  dlms_profile_channel_t* channel);
+dlms_profile_status_t dlms_profile_disconnect_data_link(
+  dlms_profile_channel_t* channel);
 dlms_profile_status_t dlms_profile_send_apdu(...);
 dlms_profile_status_t dlms_profile_receive_apdu(...);
 ```
@@ -30,6 +36,8 @@ dlms_profile_status_t dlms_profile_receive_apdu(...);
 - Status values mirror the C++ `ProfileStatus` contract.
 - Receive uses caller-provided storage and reports `OutputBufferTooSmall`.
 - Null pointers are rejected except for destroy.
+- HDLC session lifecycle calls return `UnsupportedFeature` for non-HDLC
+  channels.
 - The C ABI does not expose C++ exceptions, STL types, or ownership of lower
   transports.
 
@@ -38,11 +46,15 @@ dlms_profile_status_t dlms_profile_receive_apdu(...);
 ```c
 dlms_profile_channel_options_t options;
 dlms_profile_default_channel_options(&options);
+options.hdlc_use_session = 1;
+options.hdlc_role = DLMS_PROFILE_HDLC_ROLE_CLIENT;
+options.hdlc_retry_count = 3;
 
 dlms_profile_channel_t* channel =
-  dlms_profile_create_wrapper_tcp_channel(byte_stream, &options);
+  dlms_profile_create_hdlc_channel(byte_stream, &options);
 
 dlms_profile_open(channel);
+dlms_profile_connect_data_link(channel);
 dlms_profile_send_apdu(channel, apdu, apdu_size);
 
 uint8_t output[1024];

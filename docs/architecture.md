@@ -65,7 +65,7 @@ When `hdlcUseSession` is enabled, HDLC receive is data-link-session aware:
 
 ```text
 Open -> stream open only
-Client ConnectDataLink -> SNRM write -> UA read -> HdlcSession connected
+Client ConnectDataLink -> SNRM write -> UA read/retry -> HdlcSession connected
 Server AcceptDataLink -> SNRM read -> UA write -> HdlcSession connected
 
 ReadSome -> HdlcStreamDecoder::Push
@@ -77,6 +77,11 @@ ReadSome -> HdlcStreamDecoder::Push
                     -> RR write
   S/R/U-frame -> HdlcSession::ReceiveFrame and continue
 ```
+
+Session-mode send chunks the LLC LPDU by the negotiated transmit information
+field size. Each chunk is built as an `HdlcSession` I-frame, non-final chunks
+set the HDLC segmentation bit, and the channel waits for RR when the negotiated
+window requires acknowledgement before more frames are sent.
 
 The profile layer still does not inspect ACSE or xDLMS APDU contents.
 

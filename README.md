@@ -81,12 +81,18 @@ dlms::profile::ApduChannelOptions options =
   dlms::profile::DefaultApduChannelOptions();
 options.hdlcUseSession = true;
 options.hdlcRole = dlms::profile::HdlcProfileRole::Client;
+options.hdlcRetryCount = 3;
+options.hdlcRetryDelayMilliseconds = 10;
 
 dlms::profile::HdlcProfileChannel channel(stream, options);
 channel.Open();
 channel.ConnectDataLink();
 channel.SendApdu(dlms::profile::ProfileByteView{apdu, apduSize});
 ```
+
+In session mode `SendApdu()` waits for HDLC acknowledgement and retries the
+last outbound frame on retryable receive statuses until the configured retry
+limit is reached.
 
 All examples pass APDU bytes as opaque payload. Use `dlms-apdu` above this
 layer when ACSE or xDLMS parsing is required.

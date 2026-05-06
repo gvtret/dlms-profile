@@ -103,6 +103,7 @@ class HdlcAutoPeerStream : public IByteStream
 public:
   explicit HdlcAutoPeerStream(std::size_t maxInfo)
     : open_(false)
+    , autoRespond_(true)
     , server_(MakeSessionOptions(dlms::hdlc::HdlcSessionRole::Server, maxInfo))
     , decoder_(MakeStreamDecoderOptions())
   {
@@ -134,6 +135,11 @@ public:
     if (!open_) {
       return TransportStatus::NotOpen;
     }
+    if (readStatuses_.empty() == false) {
+      const TransportStatus status = readStatuses_.front();
+      readStatuses_.pop_front();
+      return status;
+    }
     if (reads_.empty()) {
       return TransportStatus::WouldBlock;
     }
@@ -155,6 +161,9 @@ public:
     writes_.push_back(inputSize == 0u
       ? std::vector<std::uint8_t>()
       : std::vector<std::uint8_t>(input, input + inputSize));
+    if (!autoRespond_) {
+      return TransportStatus::Ok;
+    }
 
     std::vector<dlms::hdlc::HdlcFrameBuffer> frames;
     if (decoder_.Push(input, inputSize, frames) != dlms::hdlc::HdlcStatus::Ok) {
@@ -186,6 +195,16 @@ public:
     reads_.push_back(bytes);
   }
 
+  void ScriptReadStatus(TransportStatus status)
+  {
+    readStatuses_.push_back(status);
+  }
+
+  void SetAutoRespond(bool autoRespond)
+  {
+    autoRespond_ = autoRespond;
+  }
+
   const std::vector<std::vector<std::uint8_t> >& Writes() const
   {
     return writes_;
@@ -193,8 +212,10 @@ public:
 
 private:
   bool open_;
+  bool autoRespond_;
   dlms::hdlc::HdlcSession server_;
   dlms::hdlc::HdlcStreamDecoder decoder_;
+  std::deque<TransportStatus> readStatuses_;
   std::deque<std::vector<std::uint8_t> > reads_;
   std::vector<std::vector<std::uint8_t> > writes_;
 };
@@ -424,6 +445,43 @@ TEST(HdlcProfileChannelTest, SessionModeSendsIFrameAndConsumesRr)
                                     frame));
   EXPECT_EQ(dlms::hdlc::HdlcFrameKind::Information,
             frame.control.FrameKind());
+}
+
+TEST(HdlcProfileChannelTest, ConnectDataLinkRetriesSnrmAfterWouldBlock)
+{
+  HdlcAutoPeerStream stream(128u);
+  ApduChannelOptions options = DefaultApduChannelOptions();
+  options.hdlcUseSession = true;
+  options.hdlcRole = HdlcProfileRole::Client;
+  options.hdlcRetryCount = 1u;
+  options.hdlcRetryDelayMilliseconds = 0u;
+  HdlcProfileChannel channel(stream, options);
+
+  ASSERT_EQ(ProfileStatus::Ok, channel.Open());
+  stream.ScriptReadStatus(TransportStatus::WouldBlock);
+  EXPECT_EQ(ProfileStatus::Ok, channel.ConnectDataLink());
+  EXPECT_EQ(2u, stream.Writes().size());
+}
+
+TEST(HdlcProfileChannelTest, SessionModeRetransmitsIFrameAfterWouldBlock)
+{
+  HdlcAutoPeerStream stream(128u);
+  ApduChannelOptions options = DefaultApduChannelOptions();
+  options.hdlcUseSession = true;
+  options.hdlcRole = HdlcProfileRole::Client;
+  options.hdlcRetryCount = 1u;
+  options.hdlcRetryDelayMilliseconds = 0u;
+  HdlcProfileChannel channel(stream, options);
+  const std::uint8_t rawApdu[] = {0xc0, 0x01, 0x81, 0x00};
+  const std::vector<std::uint8_t> apdu = Bytes(rawApdu, sizeof(rawApdu));
+
+  ASSERT_EQ(ProfileStatus::Ok, channel.Open());
+  ASSERT_EQ(ProfileStatus::Ok, channel.ConnectDataLink());
+  stream.ScriptReadStatus(TransportStatus::WouldBlock);
+  ASSERT_EQ(ProfileStatus::Ok, channel.SendApdu(View(apdu)));
+
+  ASSERT_EQ(3u, stream.Writes().size());
+  EXPECT_EQ(stream.Writes()[1], stream.Writes()[2]);
 }
 
 TEST(HdlcProfileChannelTest, SessionModeReassemblesSegmentedInformation)
