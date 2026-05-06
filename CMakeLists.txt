@@ -15,6 +15,12 @@ add_library(dlms_profile
   src/profile/wrapper_udp_profile_channel.cpp
   src/profile/profile_skeleton.cpp)
 
+if(DLMS_BUILD_C_API)
+  target_sources(dlms_profile
+    PRIVATE
+      src/profile/profile_c_api.cpp)
+endif()
+
 if(NOT TARGET dlms_transport AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../dlms-transport/CMakeLists.txt")
   add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../dlms-transport" "${CMAKE_CURRENT_BINARY_DIR}/_deps/dlms-transport")
 endif()
