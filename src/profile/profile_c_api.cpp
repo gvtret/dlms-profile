@@ -82,6 +82,12 @@ dlms_profile_channel_t* WrapChannel(dlms::profile::IApduChannel* impl)
   }
 }
 
+dlms::profile::HdlcProfileChannel* AsHdlcChannel(
+  dlms_profile_channel_t* channel)
+{
+  return dynamic_cast<dlms::profile::HdlcProfileChannel*>(channel->impl);
+}
+
 } // namespace
 
 void dlms_profile_default_channel_options(
@@ -188,7 +194,11 @@ dlms_profile_status_t dlms_profile_open(dlms_profile_channel_t* channel)
     return DLMS_PROFILE_STATUS_INVALID_ARGUMENT;
   }
 
-  return ToCStatus(channel->impl->Open());
+  try {
+    return ToCStatus(channel->impl->Open());
+  } catch (...) {
+    return DLMS_PROFILE_STATUS_INTERNAL_ERROR;
+  }
 }
 
 dlms_profile_status_t dlms_profile_close(dlms_profile_channel_t* channel)
@@ -197,7 +207,11 @@ dlms_profile_status_t dlms_profile_close(dlms_profile_channel_t* channel)
     return DLMS_PROFILE_STATUS_INVALID_ARGUMENT;
   }
 
-  return ToCStatus(channel->impl->Close());
+  try {
+    return ToCStatus(channel->impl->Close());
+  } catch (...) {
+    return DLMS_PROFILE_STATUS_INTERNAL_ERROR;
+  }
 }
 
 int dlms_profile_is_open(const dlms_profile_channel_t* channel)
@@ -206,7 +220,11 @@ int dlms_profile_is_open(const dlms_profile_channel_t* channel)
     return 0;
   }
 
-  return channel->impl->IsOpen() ? 1 : 0;
+  try {
+    return channel->impl->IsOpen() ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
 }
 
 dlms_profile_status_t dlms_profile_connect_data_link(
@@ -216,12 +234,15 @@ dlms_profile_status_t dlms_profile_connect_data_link(
     return DLMS_PROFILE_STATUS_INVALID_ARGUMENT;
   }
 
-  dlms::profile::HdlcProfileChannel* hdlc =
-    dynamic_cast<dlms::profile::HdlcProfileChannel*>(channel->impl);
+  dlms::profile::HdlcProfileChannel* hdlc = AsHdlcChannel(channel);
   if (hdlc == 0) {
     return DLMS_PROFILE_STATUS_UNSUPPORTED_FEATURE;
   }
-  return ToCStatus(hdlc->ConnectDataLink());
+  try {
+    return ToCStatus(hdlc->ConnectDataLink());
+  } catch (...) {
+    return DLMS_PROFILE_STATUS_INTERNAL_ERROR;
+  }
 }
 
 dlms_profile_status_t dlms_profile_accept_data_link(
@@ -231,12 +252,15 @@ dlms_profile_status_t dlms_profile_accept_data_link(
     return DLMS_PROFILE_STATUS_INVALID_ARGUMENT;
   }
 
-  dlms::profile::HdlcProfileChannel* hdlc =
-    dynamic_cast<dlms::profile::HdlcProfileChannel*>(channel->impl);
+  dlms::profile::HdlcProfileChannel* hdlc = AsHdlcChannel(channel);
   if (hdlc == 0) {
     return DLMS_PROFILE_STATUS_UNSUPPORTED_FEATURE;
   }
-  return ToCStatus(hdlc->AcceptDataLink());
+  try {
+    return ToCStatus(hdlc->AcceptDataLink());
+  } catch (...) {
+    return DLMS_PROFILE_STATUS_INTERNAL_ERROR;
+  }
 }
 
 dlms_profile_status_t dlms_profile_disconnect_data_link(
@@ -246,12 +270,15 @@ dlms_profile_status_t dlms_profile_disconnect_data_link(
     return DLMS_PROFILE_STATUS_INVALID_ARGUMENT;
   }
 
-  dlms::profile::HdlcProfileChannel* hdlc =
-    dynamic_cast<dlms::profile::HdlcProfileChannel*>(channel->impl);
+  dlms::profile::HdlcProfileChannel* hdlc = AsHdlcChannel(channel);
   if (hdlc == 0) {
     return DLMS_PROFILE_STATUS_UNSUPPORTED_FEATURE;
   }
-  return ToCStatus(hdlc->DisconnectDataLink());
+  try {
+    return ToCStatus(hdlc->DisconnectDataLink());
+  } catch (...) {
+    return DLMS_PROFILE_STATUS_INTERNAL_ERROR;
+  }
 }
 
 dlms_profile_status_t dlms_profile_send_apdu(
@@ -266,7 +293,11 @@ dlms_profile_status_t dlms_profile_send_apdu(
   dlms::profile::ProfileByteView view;
   view.data = apdu;
   view.size = apdu_size;
-  return ToCStatus(channel->impl->SendApdu(view));
+  try {
+    return ToCStatus(channel->impl->SendApdu(view));
+  } catch (...) {
+    return DLMS_PROFILE_STATUS_INTERNAL_ERROR;
+  }
 }
 
 dlms_profile_status_t dlms_profile_receive_apdu(
@@ -283,5 +314,9 @@ dlms_profile_status_t dlms_profile_receive_apdu(
   buffer.data = output;
   buffer.size = output_size;
   buffer.writtenSize = written_size;
-  return ToCStatus(channel->impl->ReceiveApdu(buffer));
+  try {
+    return ToCStatus(channel->impl->ReceiveApdu(buffer));
+  } catch (...) {
+    return DLMS_PROFILE_STATUS_INTERNAL_ERROR;
+  }
 }

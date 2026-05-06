@@ -12,8 +12,7 @@ add_library(dlms_profile
   src/profile/hdlc_profile_channel.cpp
   src/profile/profile_types.cpp
   src/profile/wrapper_tcp_profile_channel.cpp
-  src/profile/wrapper_udp_profile_channel.cpp
-  src/profile/profile_skeleton.cpp)
+  src/profile/wrapper_udp_profile_channel.cpp)
 
 if(DLMS_BUILD_C_API)
   target_sources(dlms_profile
