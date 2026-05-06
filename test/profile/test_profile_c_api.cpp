@@ -39,6 +39,8 @@ TEST(ProfileCApi, DefaultOptionsExposeHdlcSessionFields)
   dlms_profile_channel_options_t options;
   dlms_profile_default_channel_options(&options);
 
+  EXPECT_EQ(1u, DLMS_PROFILE_C_API_VERSION);
+  EXPECT_EQ(sizeof(options), DLMS_PROFILE_CHANNEL_OPTIONS_SIZE);
   EXPECT_EQ(DLMS_PROFILE_HDLC_ROLE_CLIENT, options.hdlc_role);
   EXPECT_EQ(0, options.hdlc_use_session);
   EXPECT_EQ(3u, options.hdlc_retry_count);

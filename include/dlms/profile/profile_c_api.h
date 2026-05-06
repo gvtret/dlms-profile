@@ -8,6 +8,8 @@
 extern "C" {
 #endif
 
+#define DLMS_PROFILE_C_API_VERSION 1u
+
 typedef enum dlms_profile_status_t
 {
   DLMS_PROFILE_STATUS_OK = 0,
@@ -61,6 +63,9 @@ typedef struct dlms_profile_channel_options_t
   uint8_t hdlc_retry_count;
   uint32_t hdlc_retry_delay_milliseconds;
 } dlms_profile_channel_options_t;
+
+#define DLMS_PROFILE_CHANNEL_OPTIONS_SIZE \
+  (sizeof(dlms_profile_channel_options_t))
 
 typedef struct dlms_profile_channel_t dlms_profile_channel_t;
 

@@ -6,6 +6,10 @@ object; callers must keep the transport alive until the handle is destroyed.
 ## Core Calls
 
 ```c
+#define DLMS_PROFILE_C_API_VERSION 1u
+#define DLMS_PROFILE_CHANNEL_OPTIONS_SIZE \
+  (sizeof(dlms_profile_channel_options_t))
+
 dlms_profile_channel_t* dlms_profile_create_wrapper_tcp_channel(
   void* byte_stream,
   const dlms_profile_channel_options_t* options);
@@ -34,6 +38,8 @@ dlms_profile_status_t dlms_profile_receive_apdu(...);
 ## Rules
 
 - Status values mirror the C++ `ProfileStatus` contract.
+- `DLMS_PROFILE_C_API_VERSION` and `DLMS_PROFILE_CHANNEL_OPTIONS_SIZE` let
+  callers assert the header contract they were compiled against.
 - Receive uses caller-provided storage and reports `OutputBufferTooSmall`.
 - Null pointers are rejected except for destroy.
 - HDLC session lifecycle calls return `UnsupportedFeature` for non-HDLC

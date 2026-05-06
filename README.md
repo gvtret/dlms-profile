@@ -13,7 +13,9 @@ Supported channels:
   orchestration.
 
 The library does not parse ACSE or xDLMS APDUs, does not manage association
-state, and does not implement retry, timeout, security, or COSEM object logic.
+state, and does not implement APDU-level retry, timeout, security, or COSEM
+object logic. Optional HDLC session mode only retries data-link frames while
+waiting for HDLC acknowledgements.
 
 ## Build
 
