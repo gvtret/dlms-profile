@@ -11,6 +11,7 @@ option(DLMS_USE_SYSTEM_GTEST "Use system-installed GoogleTest" OFF)
 add_library(dlms_profile
   src/profile/profile_types.cpp
   src/profile/wrapper_tcp_profile_channel.cpp
+  src/profile/wrapper_udp_profile_channel.cpp
   src/profile/profile_skeleton.cpp)
 
 if(NOT TARGET dlms_transport AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../dlms-transport/CMakeLists.txt")
