@@ -29,16 +29,63 @@ There is no dependency on `dlms-apdu`.
 
 ## Layer Diagram
 
-```text
-Association / xDLMS client / server
-             |
-             v
-       IApduChannel
-      /     |      \
- Wrapper  Wrapper  HDLC+LLC
-  TCP      UDP        |
-   |       |          |
-IByteStream IDatagram IByteStream
+```mermaid
+flowchart TB
+  Upper["Association / xDLMS client / server"]
+  Channel["IApduChannel"]
+  WrapperTcp["WrapperTcpProfileChannel"]
+  WrapperUdp["WrapperUdpProfileChannel"]
+  Hdlc["HdlcProfileChannel"]
+  TcpStream["IByteStream"]
+  Datagram["IDatagramTransport"]
+  Wrapper["dlms-wrapper"]
+  Llc["dlms-llc"]
+  HdlcCodec["dlms-hdlc"]
+
+  Upper --> Channel
+  Channel --> WrapperTcp
+  Channel --> WrapperUdp
+  Channel --> Hdlc
+  WrapperTcp --> TcpStream
+  WrapperTcp --> Wrapper
+  WrapperUdp --> Datagram
+  WrapperUdp --> Wrapper
+  Hdlc --> TcpStream
+  Hdlc --> Llc
+  Hdlc --> HdlcCodec
+```
+
+## Class Interaction Diagram
+
+```mermaid
+classDiagram
+  class IApduChannel {
+    <<interface>>
+    +Open()
+    +Close()
+    +IsOpen()
+    +SendApdu()
+    +ReceiveApdu()
+  }
+
+  class WrapperTcpProfileChannel
+  class WrapperUdpProfileChannel
+  class HdlcProfileChannel
+  class ApduChannelOptions
+  class ProfileStatus
+  class ProfileByteView
+  class ProfileMutableBuffer
+
+  IApduChannel <|.. WrapperTcpProfileChannel
+  IApduChannel <|.. WrapperUdpProfileChannel
+  IApduChannel <|.. HdlcProfileChannel
+
+  WrapperTcpProfileChannel --> ApduChannelOptions
+  WrapperUdpProfileChannel --> ApduChannelOptions
+  HdlcProfileChannel --> ApduChannelOptions
+  IApduChannel --> ProfileStatus
+  IApduChannel --> ProfileByteView
+  IApduChannel --> ProfileMutableBuffer
 ```
 
 ## TCP Receive State

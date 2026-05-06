@@ -33,7 +33,7 @@ Root tests should prove cross-repository contracts only:
 ## Commands
 
 ```text
-cmake -S E:\work\dlms -B E:\work\dlms\build-codex
-cmake --build E:\work\dlms\build-codex
-ctest --test-dir E:\work\dlms\build-codex
+cmake -S E:\work\dlms -B <build-dir>
+cmake --build <build-dir>
+ctest --test-dir <build-dir>
 ```
