@@ -59,10 +59,45 @@ enum class HdlcProfileRole
   Server
 };
 
+enum class WrapperTcpTraceDirection
+{
+  Outbound,
+  Inbound
+};
+
+enum class WrapperTcpTraceKind
+{
+  EncodedFrame,
+  DecodedFrame,
+  ReadStatus,
+  DecodeStatus
+};
+
+struct WrapperTcpTraceEvent
+{
+  WrapperTcpTraceKind kind;
+  WrapperTcpTraceDirection direction;
+  ProfileStatus status;
+  std::uint16_t sourcePort;
+  std::uint16_t destinationPort;
+  std::size_t encodedSize;
+  std::size_t apduSize;
+  const std::uint8_t* bytes;
+  std::size_t byteSize;
+};
+
+class IWrapperTcpTraceSink
+{
+public:
+  virtual ~IWrapperTcpTraceSink() {}
+  virtual void OnWrapperTcpTrace(const WrapperTcpTraceEvent& event) = 0;
+};
+
 struct ApduChannelOptions
 {
   std::uint16_t localWrapperPort;
   std::uint16_t remoteWrapperPort;
+  IWrapperTcpTraceSink* wrapperTcpTraceSink;
 
   std::uint8_t hdlcClientAddress;
   std::uint16_t hdlcLogicalDeviceAddress;

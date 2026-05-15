@@ -27,6 +27,10 @@ using dlms::profile::HdlcProfileChannel;
 using dlms::profile::ProfileByteView;
 using dlms::profile::ProfileMutableBuffer;
 using dlms::profile::ProfileStatus;
+using dlms::profile::IWrapperTcpTraceSink;
+using dlms::profile::WrapperTcpTraceDirection;
+using dlms::profile::WrapperTcpTraceEvent;
+using dlms::profile::WrapperTcpTraceKind;
 using dlms::profile::WrapperTcpProfileChannel;
 using dlms::profile::WrapperUdpProfileChannel;
 using dlms::transport::FakeByteStream;
@@ -220,6 +224,17 @@ private:
   std::vector<std::vector<std::uint8_t> > writes_;
 };
 
+class RecordingWrapperTcpTraceSink : public IWrapperTcpTraceSink
+{
+public:
+  void OnWrapperTcpTrace(const WrapperTcpTraceEvent& event)
+  {
+    events.push_back(event);
+  }
+
+  std::vector<WrapperTcpTraceEvent> events;
+};
+
 TEST(ProfileTypes, MapsLowerLayerStatuses)
 {
   EXPECT_EQ(ProfileStatus::WouldBlock,
@@ -232,6 +247,12 @@ TEST(ProfileTypes, MapsLowerLayerStatuses)
   EXPECT_EQ(ProfileStatus::InvalidAddress,
             dlms::profile::MapHdlcStatus(
               dlms::hdlc::HdlcStatus::InvalidAddress));
+}
+
+TEST(ProfileTypes, DefaultOptionsDisableWrapperTcpTrace)
+{
+  const ApduChannelOptions options = DefaultApduChannelOptions();
+  EXPECT_EQ(0, options.wrapperTcpTraceSink);
 }
 
 TEST(WrapperTcpProfileChannelTest, SendApduWritesOneWpdu)
@@ -254,6 +275,30 @@ TEST(WrapperTcpProfileChannelTest, SendApduWritesOneWpdu)
   EXPECT_EQ(apdu, decoded.data);
 }
 
+TEST(WrapperTcpProfileChannelTest, SendApduEmitsOutboundTrace)
+{
+  FakeByteStream stream;
+  RecordingWrapperTcpTraceSink trace;
+  ApduChannelOptions options = DefaultApduChannelOptions();
+  options.wrapperTcpTraceSink = &trace;
+  WrapperTcpProfileChannel channel(stream, options);
+  const std::uint8_t rawApdu[] = {0x60, 0x01, 0x00};
+  const std::vector<std::uint8_t> apdu = Bytes(rawApdu, sizeof(rawApdu));
+
+  ASSERT_EQ(ProfileStatus::Ok, channel.Open());
+  ASSERT_EQ(ProfileStatus::Ok, channel.SendApdu(View(apdu)));
+
+  ASSERT_EQ(1u, trace.events.size());
+  EXPECT_EQ(WrapperTcpTraceKind::EncodedFrame, trace.events[0].kind);
+  EXPECT_EQ(WrapperTcpTraceDirection::Outbound, trace.events[0].direction);
+  EXPECT_EQ(ProfileStatus::Ok, trace.events[0].status);
+  EXPECT_EQ(options.localWrapperPort, trace.events[0].sourcePort);
+  EXPECT_EQ(options.remoteWrapperPort, trace.events[0].destinationPort);
+  EXPECT_EQ(apdu.size(), trace.events[0].apduSize);
+  EXPECT_EQ(stream.Writes()[0].size(), trace.events[0].encodedSize);
+  EXPECT_EQ(stream.Writes()[0].size(), trace.events[0].byteSize);
+}
+
 TEST(WrapperTcpProfileChannelTest, ReceiveApduHandlesSplitWpdu)
 {
   FakeByteStream stream;
@@ -269,6 +314,80 @@ TEST(WrapperTcpProfileChannelTest, ReceiveApduHandlesSplitWpdu)
   std::vector<std::uint8_t> received;
   ASSERT_EQ(ProfileStatus::Ok, channel.ReceiveApdu(received));
   EXPECT_EQ(apdu, received);
+}
+
+TEST(WrapperTcpProfileChannelTest, ReceiveApduEmitsInboundDecodedTrace)
+{
+  FakeByteStream stream;
+  RecordingWrapperTcpTraceSink trace;
+  ApduChannelOptions options = DefaultApduChannelOptions();
+  options.wrapperTcpTraceSink = &trace;
+  WrapperTcpProfileChannel channel(stream, options);
+  const std::uint8_t rawApdu[] = {0x61, 0x01, 0x00};
+  const std::vector<std::uint8_t> apdu = Bytes(rawApdu, sizeof(rawApdu));
+
+  ASSERT_EQ(ProfileStatus::Ok, channel.Open());
+  stream.ScriptRead(EncodeWpdu(apdu));
+
+  std::vector<std::uint8_t> received;
+  ASSERT_EQ(ProfileStatus::Ok, channel.ReceiveApdu(received));
+
+  ASSERT_EQ(1u, trace.events.size());
+  EXPECT_EQ(WrapperTcpTraceKind::DecodedFrame, trace.events[0].kind);
+  EXPECT_EQ(WrapperTcpTraceDirection::Inbound, trace.events[0].direction);
+  EXPECT_EQ(ProfileStatus::Ok, trace.events[0].status);
+  EXPECT_EQ(dlms::wrapper::kPublicClient, trace.events[0].sourcePort);
+  EXPECT_EQ(dlms::wrapper::kManagementLogicalDevice,
+            trace.events[0].destinationPort);
+  EXPECT_EQ(apdu.size(), trace.events[0].apduSize);
+  EXPECT_EQ(apdu.size(), trace.events[0].byteSize);
+}
+
+TEST(WrapperTcpProfileChannelTest, ReceiveApduEmitsReadFailureTrace)
+{
+  FakeByteStream stream;
+  RecordingWrapperTcpTraceSink trace;
+  ApduChannelOptions options = DefaultApduChannelOptions();
+  options.wrapperTcpTraceSink = &trace;
+  WrapperTcpProfileChannel channel(stream, options);
+
+  ASSERT_EQ(ProfileStatus::Ok, channel.Open());
+  stream.ScriptNextReadStatus(TransportStatus::ConnectionClosed);
+
+  std::vector<std::uint8_t> received;
+  EXPECT_EQ(ProfileStatus::ConnectionClosed, channel.ReceiveApdu(received));
+
+  ASSERT_EQ(1u, trace.events.size());
+  EXPECT_EQ(WrapperTcpTraceKind::ReadStatus, trace.events[0].kind);
+  EXPECT_EQ(WrapperTcpTraceDirection::Inbound, trace.events[0].direction);
+  EXPECT_EQ(ProfileStatus::ConnectionClosed, trace.events[0].status);
+}
+
+TEST(WrapperTcpProfileChannelTest, ReceiveApduEmitsDecodeFailureTrace)
+{
+  FakeByteStream stream;
+  RecordingWrapperTcpTraceSink trace;
+  ApduChannelOptions options = DefaultApduChannelOptions();
+  options.wrapperTcpTraceSink = &trace;
+  WrapperTcpProfileChannel channel(stream, options);
+  const std::uint8_t invalid[] = {
+    0x00, 0x02,
+    0x00, 0x10,
+    0x00, 0x01,
+    0x00, 0x00
+  };
+
+  ASSERT_EQ(ProfileStatus::Ok, channel.Open());
+  stream.ScriptRead(Bytes(invalid, sizeof(invalid)));
+
+  std::vector<std::uint8_t> received;
+  EXPECT_EQ(ProfileStatus::InvalidFrame, channel.ReceiveApdu(received));
+
+  ASSERT_EQ(1u, trace.events.size());
+  EXPECT_EQ(WrapperTcpTraceKind::DecodeStatus, trace.events[0].kind);
+  EXPECT_EQ(WrapperTcpTraceDirection::Inbound, trace.events[0].direction);
+  EXPECT_EQ(ProfileStatus::InvalidFrame, trace.events[0].status);
+  EXPECT_EQ(sizeof(invalid), trace.events[0].byteSize);
 }
 
 TEST(WrapperTcpProfileChannelTest, SmallReceiveBufferDoesNotConsumeApdu)
